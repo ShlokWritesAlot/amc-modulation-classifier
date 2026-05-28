@@ -46,77 +46,86 @@ clockOffset = comm.PhaseFrequencyOffset(...
     'FrequencyOffset', 0);
 
 
-%% BLOCK 4: Frame Generator Loop
+%% Block 4: Frame Generator Loop
+numModTypes = length(modTypes);
+totalFrames = numModTypes * numFramesPerModType;
 
-numModTypes = length(modTypes);  % = 11 (for baseline version)
-totalFrames = numModTypes * numFramesPerModType; % 11,000 frames
-
-% Preallocating dataset arrays (faster than loop)
-
-frameData = zeroes(2, spf, 1, totalFrames);  % [2x1024x1x11000] refer to notes
-frameLabel = repmat(modeTypes(1), totalFrames, 1);
-
-frameIdx = 1; %global frame counter 
+% Preallocate dataset
+frameData  = zeros(2, spf, 1, totalFrames);
+frameLabel = repmat(modTypes(1), totalFrames, 1);
+frameIdx = 1;
 
 for modIdx = 1:numModTypes
+    modType = modTypes(modIdx);
+    bps     = bitsPerSymbol(modIdx);
 
-    modType = modTypes(modIdx); % example: "BPSK"
-    bps  = bitsPerSymbol(modIdx);  %bits per symbol for the mod type BPSK = 1
+    % Get the modulator function for this mod type
+    modulator = helperModClassGetModulator(modType, sps, fs);
 
-    for frameNum = 1:numFramesPerModType
+    % How many bits to generate per batch
+    numSymbols = 10 * spf;
+    numBits    = numSymbols * bps;
+    frameCount = 0;
 
-        % Step 1: Generating random bits here
+    while frameCount < numFramesPerModType
 
-        numSymbols = spf/sps; % 128 symbols per frame, refer to notes 
-        numBits = numSymbols*bps;  %Total bits needed
-        bits = randi([0 1], numBits, 1);
+        % Step 1: Generate random bits and modulate
+        bits     = randi([0 1], numBits, 1);
+        txSignal = modulator(bits);
 
-        % Step 2: Modulate bits ==> Complex symbols 
-        symbols = helperModClassModulate(bits, modType, bps);
+        % Step 2: Pass through Rician channel
+        rxSignal = ricianChannel(txSignal);
 
-
-        % Step 3: Pulse shape into upsampled to sps samples
-        
-        txtSignal = helperModClassPulseShape(symbols, sps);
-
-        % Step 4.1: Rician multipath channel
-
-        rxSignal = ricianChannel(txtSignal);
-
-        % Step 4.2: Randomize clock offset per frame (0 earlier) +- ppm
-
+        % Step 3: Apply random clock offset
         release(clockOffset);
         clockOffset.FrequencyOffset = fs * 5e-6 * (2*rand()-1);
         rxSignal = clockOffset(rxSignal);
 
-
-        % Step 4c: AWGN noise
+        % Step 4: Apply AWGN
         release(awgnChannel);
         rxSignal = awgnChannel(rxSignal);
 
+        % Step 5: Slice into frames
+        frames = helperModClassFrameGenerator(rxSignal, spf, spf, 50, sps);
 
-        % Step 5: Clice to spf samples 
-        rxSignal = rxSignal(1:spf);
-
-        %step 6: Normalize (zero mean, unit variance)
-
-        rxSignal = rxSignal - mean(rxSignal);
-        rxSignal = rxSignal /std(rxSignal);
-
-        % Step 7: Store as [2 × 1024] (I and Q rows)
-        frameData(1, :, 1, frameIdx) = real(rxSignal);  % I channel
-        frameData(2, :, 1, frameIdx) = imag(rxSignal);  % Q channel
-        frameLabel(frameIdx)         = modType;
-
-        frameIdx = frameIdx + 1;  % move to next frame slot
-
+        % Step 6: Store each frame
+        for k = 1:size(frames, 2)
+            if frameCount >= numFramesPerModType
+                break;
+            end
+            frame = frames(:, k);
+            frameData(1, :, 1, frameIdx) = real(frame);
+            frameData(2, :, 1, frameIdx) = imag(frame);
+            frameLabel(frameIdx)         = modType;
+            frameIdx   = frameIdx   + 1;
+            frameCount = frameCount + 1;
+        end
 
     end
-    fprintf('Generated %d frames for %s', numFramesPerModType, modType);
 
-end 
+    fprintf('Generated %d frames for %s\n', numFramesPerModType, char(modType));
+end
+
+fprintf('Dataset complete: %d total frames\n', totalFrames);
 
 
+%% Block 5: Train/Test Split
+
+rng(42); %set random seed (random.seed() in python)
+
+partition  = cvpartition(frameLabel, 'HoldOut', 0.2);
 
 
+% Training Set
 
+trainData = frameData(:, :, :, training(partition));
+trainLabel = frameLabel(training(partition));
+
+
+% Test set
+
+testData  = frameData(:, :, :, test(partition));
+testLabel = frameLabel(test(partition));
+
+fprintf('Training frames: %d\n', sum(training(partition)));
+fprintf('Test frames:     %d\n', sum(test(partition)));
