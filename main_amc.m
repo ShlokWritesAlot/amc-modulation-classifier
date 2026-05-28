@@ -129,3 +129,63 @@ testLabel = frameLabel(test(partition));
 
 fprintf('Training frames: %d\n', sum(training(partition)));
 fprintf('Test frames:     %d\n', sum(test(partition)));
+
+%% Block 6: Build CNN Architecture 
+
+modCLassNet = helperModClassCNN(modTypes, sps, spf);
+
+% Visualize the network architecture 
+
+analyzeNetwork(modCLassNet)
+
+
+%% Block 7: Training Options
+trainOptions = trainingOptions('adam', ...
+    'InitialLearnRate', 0.001, ...
+    'MaxEpochs', 10, ...
+    'MiniBatchSize', 256, ...
+    'Shuffle', 'every-epoch', ...
+    'Verbose', true, ...
+    'Plots', 'training-progress', ...
+    'ExecutionEnvironment', 'gpu');
+
+%% Block 8: Train Network
+% Reconstruct complex training data from I and Q rows
+trainDataComplex = squeeze(trainData(1,:,:,:)) + ...
+    1j * squeeze(trainData(2,:,:,:));
+
+% Reshape to [1024 × 1 × 8800] — one sample per page
+trainDataComplex = reshape(trainDataComplex, spf, 1, []);
+
+% Train the network
+trainedNet = trainnet(trainDataComplex, trainLabel, modCLassNet, ...
+    'crossentropy', trainOptions);
+
+%% Block 9: Evaluate on Test Set
+% Reconstruct complex test data
+testDataComplex = squeeze(testData(1,:,:,:)) + ...
+    1j * squeeze(testData(2,:,:,:));
+
+% Reshape to [1024 × 1 × 2200]
+testDataComplex = reshape(testDataComplex, spf, 1, []);
+
+% Get prediction scores from trained network
+scores = predict(trainedNet, testDataComplex);
+
+% Get correct class order (alphabetical, matches network output)
+networkClasses = categories(trainLabel);
+
+% Convert scores to class labels using correct order
+[~, idx] = max(scores, [], 2);
+predictions = categorical(networkClasses(idx));
+
+% Calculate overall accuracy
+accuracy = mean(predictions == testLabel);
+fprintf('Test Accuracy: %.2f%%\n', accuracy * 100);
+
+% Plot confusion matrix
+figure;
+confusionchart(testLabel, predictions, ...
+    'Title', 'Confusion Matrix — Baseline CNN (SNR = 30dB)', ...
+    'RowSummary', 'row-normalized', ...
+    'ColumnSummary', 'column-normalized');
