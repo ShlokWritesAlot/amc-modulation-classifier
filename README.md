@@ -1,160 +1,126 @@
 # AMC Modulation Classifier
-Deep learning-based Automatic Modulation Classification (AMC) using CNN and ResNet architectures in MATLAB R2026a.  
-Replicates and extends the [MathWorks Modulation Classification with Deep Learning](https://in.mathworks.com/help/comm/ug/modulation-classification-with-deep-learning.html) example with novel contributions targeting IEEE GLOBECOM/ICC 2027.
+
+Deep learning-based Automatic Modulation Classification (AMC) using a CNN architecture in MATLAB R2026a. Replicates and extends the [MathWorks Modulation Classification with Deep Learning](https://www.mathworks.com/help/comm/ug/modulation-classification-with-deep-learning.html) example with novel contributions targeting IEEE GLOBECOM/ICC 2027.
 
 ---
 
 ## Overview
-This project builds a deep learning pipeline that classifies radio modulation schemes directly from raw IQ samples — no feature engineering required. The classifier learns to distinguish between modulation types by treating the IQ signal as a 2-channel 1D image.
 
----
+This project builds a deep learning pipeline that classifies radio modulation schemes directly from raw IQ samples — no feature engineering required. The classifier learns to distinguish modulation types by treating IQ signals as a 2-channel 1D input to a CNN.
 
-## Pipeline
-```text
-Random Bits → Modulator → Pulse Shaping → Channel → Frame [2×1024] → CNN → Label
+```
+Random Bits → Modulator → Pulse Shaping (SRRC, sps=8) → Channel → Frame [2×1024] → CNN → Label
 ```
 
-Channel impairments applied per frame:
-- AWGN (controlled by SNR)
-- Rician multipath (3 delayed paths, K=4)
-- Clock offset (±5 ppm)
-- IQ Imbalance (±5% gain, ±2° phase) — *Extension 2*
+**Channel Impairments:** AWGN (SNR controlled) · Rician multipath (3 paths, K=4) · Clock offset (±5 ppm) · IQ imbalance (±5% gain, ±2° phase)
 
 ---
 
-## Modulation Types
+## CNN Architecture
 
-### Baseline (11 types)
+| Stage | Layer | Output Shape |
+|---|---|---|
+| Input | IQ frame (I/Q channels) | 1024×2 |
+| Block 1 | Conv1D(16, k=8) → BN → ReLU → MaxPool | 512×16 |
+| Block 2 | Conv1D(32, k=8) → BN → ReLU → MaxPool | 256×32 |
+| Block 3 | Conv1D(48, k=8) → BN → ReLU → MaxPool | 128×48 |
+| Block 4 | Conv1D(64, k=8) → BN → ReLU → MaxPool | 64×64 |
+| Block 5 | Conv1D(32, k=8) → BN → ReLU → GlobalAvgPool | 32 |
+| Output | FC(11) → Softmax | 11 |
 
-| Type    | Category    | Bits/Symbol |
-|---------|-------------|-------------|
-| BPSK    | Digital PSK | 1           |
-| QPSK    | Digital PSK | 2           |
-| 8PSK    | Digital PSK | 3           |
-| 16QAM   | Digital QAM | 4           |
-| 64QAM   | Digital QAM | 6           |
-| PAM4    | Digital PAM | 2           |
-| GFSK    | Digital FSK | 2           |
-| CPFSK   | Digital FSK | 2           |
-| B-FM    | Analog FM   | —           |
-| DSB-AM  | Analog AM   | —           |
-| SSB-AM  | Analog AM   | —           |
-
-### Extended *(coming soon)*
-- π/2-BPSK, 256QAM via 5G Toolbox
-- LTE OFDM via LTE Toolbox
-- 802.11 OFDM via WLAN Toolbox
+**Total layers:** 23 · **Parameters:** ~58,500 · **Optimizer:** Adam · **LR:** 0.001 · **Epochs:** 10 · **Batch size:** 256 · **Loss:** Cross-entropy · **GPU:** GTX 1650 Ti
 
 ---
 
-## Extensions
+## Dataset
 
-| # | Extension                          | Status      |
-|---|------------------------------------|-------------|
-| 1 | SNR Sweep (−10 to 30 dB)           | In progress |
-| 2 | IQ Imbalance channel impairment    | In progress |
-| 3 | Extended modulation types          | In progress |
-| 4 | ResNet architecture vs baseline CNN| In progress |
+### Baseline — 11 Classes
 
----
+`BPSK · QPSK · 8PSK · 16QAM · 64QAM · PAM4 · GFSK · CPFSK · B-FM · DSB-AM · SSB-AM`
 
-## Environment
+| Split | Frames |
+|---|---|
+| Total | 11,000 |
+| Train | 8,800 |
+| Test | 2,200 |
 
-| Item       | Detail                                                                                        |
-|------------|-----------------------------------------------------------------------------------------------|
-| MATLAB     | R2026a                                                                                        |
-| GPU        | NVIDIA GeForce GTX 1650 Ti (4 GB)                                                             |
-| Toolboxes  | Communications, Deep Learning, Signal Processing, Parallel Computing, 5G, LTE, WLAN          |
+### Extended — 15 Classes
 
----
+Adds `PI/2-BPSK · 256QAM · LTE-OFDM · WLAN-OFDM` via MathWorks 5G/LTE/WLAN toolboxes.
 
-## Key Parameters
+| Split | Frames |
+|---|---|
+| Total | 15,000 |
+| Train | 12,000 |
+| Test | 3,000 |
 
-| Parameter          | Value   | Meaning                            |
-|--------------------|---------|------------------------------------|
-| `sps`              | 8       | Samples per symbol                 |
-| `spf`              | 1024    | Samples per frame (CNN input)      |
-| `fs`               | 200e3   | Sample rate (200 kHz)              |
-| `SNR`              | 30      | Signal-to-noise ratio (dB)         |
-| `numFramesPerModType` | 1000 | Frames per class (11,000 total)   |
+**Key parameters:** `sps=8` · `spf=1024` · `fs=200 kHz` · `SNR=30 dB` · `1000 frames/class`
 
 ---
 
-## Architecture — Baseline CNN
+## Experiments & Results
 
-```text
-Input: complex IQ sequence [2 × 1024]
-Conv1D(16)  → BN → ReLU → MaxPool
-Conv1D(32)  → BN → ReLU → MaxPool
-Conv1D(48)  → BN → ReLU → MaxPool
-Conv1D(64)  → BN → ReLU → MaxPool
-Conv1D(32)  → BN → ReLU → GlobalAvgPool
-FC(11)      → Softmax → Predicted Label
-```
+### Summary
 
-| Property              | Value         |
-|-----------------------|---------------|
-| Total layers          | 23            |
-| Learnable parameters  | 58,500        |
-| Optimizer             | Adam          |
-| Learning rate         | 0.001         |
-| Epochs                | 10            |
-| Batch size            | 256           |
-| Loss function         | Cross-entropy |
+| Experiment | Classes | Accuracy | Train Time |
+|---|---|---|---|
+| Baseline (30 dB) | 11 | **99.77%** | 16m 04s |
+| IQ Imbalance Augmentation | 11 | **99.91%** | 12m 43s |
+| Extended Dataset | 15 | **99.40%** | 11m 00s |
 
----
+### SNR Sweep (Baseline Model)
 
-## Script Structure
+| SNR (dB) | −10 | −5 | 0 | 5 | 10 | 15 | 20 | 25 | 30 |
+|---|---|---|---|---|---|---|---|---|---|
+| Accuracy (%) | 9.09 | 9.09 | 13.27 | 43.41 | 74.86 | 87.05 | 98.50 | 99.18 | 99.77 |
 
-| Block | Description                          | Status      |
-|-------|--------------------------------------|-------------|
-| 1     | Parameters                           | Done        |
-| 2     | Modulation types + bits per symbol   | Done        |
-| 3     | Channel setup (AWGN, Rician, Clock)  | Done        |
-| 4     | Frame generator loop (11,000 frames) | Done        |
-| 5     | Train/test split (80/20)             | Done        |
-| 6     | Build CNN architecture               | Done        |
-| 7     | Training options (Adam, 10 epochs, GPU) | Done     |
-| 8     | Train network                        | Done        |
-| 9     | Evaluate on test set + confusion matrix | Done     |
-| 10    | SNR sweep (−10 to 30 dB)            | In progress |
-| 11    | IQ Imbalance impairment              | In progress |
-| 12    | Extended modulation types            | In progress |
-| 13    | ResNet architecture                  | In progress |
-| 14    | Final comparison plots               | In progress |
+> **Insight:** Sharp performance transition occurs between 0–10 dB; accuracy saturates above 20 dB.
 
----
+### Notable Observations
 
-## Results
-
-| Experiment          | Accuracy | SNR          |
-|---------------------|----------|--------------|
-| Baseline CNN        | 99.77%   | 30 dB        |
-| CNN SNR Sweep       | —        | −10 to 30 dB |
-| CNN + IQ Imbalance  | —        | 30 dB        |
-| Extended Mod Types  | —        | 30 dB        |
-| ResNet vs CNN       | —        | 30 dB        |
+- **Baseline confusion:** 16QAM↔64QAM, PAM4→B-FM at low SNR
+- **IQ Augmentation:** ±5% gain / ±2° phase imbalance during training improved robustness and reduced train time
+- **Extended (15-class):** Minimal accuracy drop vs. baseline despite adding complex waveforms (LTE-OFDM, WLAN-OFDM)
 
 ---
 
 ## File Structure
 
 ```
-main_amc.m                          — main script (all blocks)
-helperModClassCNN.m                 — MathWorks helper: CNN architecture
-helperModClassFrameGenerator.m      — MathWorks helper: frame slicing
-helperModClassGetModulator.m        — MathWorks helper: modulator handles
-helperModClassSplitData.m           — MathWorks helper: data splitting
-helperModClassPlotScores.m          — MathWorks helper: score plotting
-README.md
+AMC-Modulation-Classifier/
+├── main_amc.m                          # Main script (13-section pipeline)
+├── helperModClassCNN.m                 # CNN architecture definition
+├── helperModClassFrameGenerator.m      # IQ frame generation with channel impairments
+├── helperModClassGetModulator.m        # Modulator objects for each class
+├── helperModClassSplitData.m           # Train/test splitting utility
+├── helperModClassPlotScores.m          # Confusion matrix & accuracy plots
+└── README.md
 ```
+
+**Script sections:** `1-Parameters · 2-Modulations · 3-Channel · 4-FrameGen · 5-Split · 6-CNN · 7-TrainOpts · 8-Train · 9-Eval · 10-SNRSweep · 11-IQImbalance · 12-Extended · 13-Plots`
 
 ---
 
-## Target Publication
-IEEE GLOBECOM 2027 / IEEE ICC 2027
+## Environment
+
+| Component | Details |
+|---|---|
+| MATLAB | R2026a |
+| GPU | NVIDIA GTX 1650 Ti (4 GB) |
+| OS | Windows 10 |
+| Toolboxes | Communications · Deep Learning · Signal Processing · Parallel Computing · 5G · LTE · WLAN |
+
+---
+
+## Novel Contributions
+
+1. **SNR robustness evaluation** across −10 to 30 dB with fine-grained sweep
+2. **IQ imbalance modeling** as a training augmentation strategy for real-world hardware imperfections
+3. **Unified AMC across 5G/LTE/WiFi** waveforms using native MATLAB toolbox integrations (15-class extension)
+
 
 ---
 
 ## Author
-**Shlok Pandey** — Intern, Professor Darak's Lab, Manipal University Jaipur
+
+**Shlok Pandey**
