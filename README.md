@@ -1,6 +1,6 @@
 # AMC Modulation Classifier
 
-Deep learning-based Automatic Modulation Classification (AMC) using a CNN architecture in MATLAB R2026a. Replicates and extends the [MathWorks Modulation Classification with Deep Learning](https://www.mathworks.com/help/comm/ug/modulation-classification-with-deep-learning.html) example with novel contributions targeting IEEE GLOBECOM/ICC 2027.
+Deep learning-based Automatic Modulation Classification (AMC) using a CNN architecture in MATLAB R2026a. Replicates and extends the [MathWorks Modulation Classification with Deep Learning](https://www.mathworks.com/help/comm/ug/modulation-classification-with-deep-learning.html) example with novel contributions.
 
 ---
 
